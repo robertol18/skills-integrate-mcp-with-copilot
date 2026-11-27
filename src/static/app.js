@@ -3,6 +3,32 @@ document.addEventListener("DOMContentLoaded", () => {
   const activitySelect = document.getElementById("activity");
   const signupForm = document.getElementById("signup-form");
   const messageDiv = document.getElementById("message");
+  const signupContainer = document.getElementById("signup-container");
+  const adminButton = document.getElementById("admin-button");
+  const loginModal = document.getElementById("login-modal");
+  const loginForm = document.getElementById("login-form");
+  const closeLogin = document.getElementById("close-login");
+  let adminToken = sessionStorage.getItem("teacherToken");
+  let adminUsername = sessionStorage.getItem("teacherUsername");
+
+  function isAdmin() {
+    return Boolean(adminToken);
+  }
+
+  function updateAdminUI() {
+    signupContainer.classList.toggle("hidden", !isAdmin());
+    adminButton.textContent = isAdmin() ? "🚪" : "👤";
+    adminButton.title = isAdmin()
+      ? `Logged in as ${adminUsername} — click to logout`
+      : "Teacher login";
+  }
+
+  function showMessage(text, type) {
+    messageDiv.textContent = text;
+    messageDiv.className = type;
+    messageDiv.classList.remove("hidden");
+    setTimeout(() => messageDiv.classList.add("hidden"), 5000);
+  }
 
   // Function to fetch activities from API
   async function fetchActivities() {
@@ -30,7 +56,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 ${details.participants
                   .map(
                     (email) =>
-                      `<li><span class="participant-email">${email}</span><button class="delete-btn" data-activity="${name}" data-email="${email}">❌</button></li>`
+                      `<li><span class="participant-email">${email}</span>${isAdmin()
+                        ? `<button class="delete-btn" data-activity="${name}" data-email="${email}" aria-label="Unregister ${email}">❌</button>`
+                        : ""}</li>`
                   )
                   .join("")}
               </ul>
@@ -80,6 +108,7 @@ document.addEventListener("DOMContentLoaded", () => {
         )}/unregister?email=${encodeURIComponent(email)}`,
         {
           method: "DELETE",
+          headers: { Authorization: `Bearer ${adminToken}` },
         }
       );
 
@@ -124,6 +153,7 @@ document.addEventListener("DOMContentLoaded", () => {
         )}/signup?email=${encodeURIComponent(email)}`,
         {
           method: "POST",
+          headers: { Authorization: `Bearer ${adminToken}` },
         }
       );
 
@@ -155,6 +185,67 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  adminButton.addEventListener("click", async () => {
+    if (isAdmin()) {
+      try {
+        await fetch("/logout", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${adminToken}` },
+        });
+      } catch (error) {
+        console.error("Error logging out:", error);
+      }
+      adminToken = null;
+      adminUsername = null;
+      sessionStorage.removeItem("teacherToken");
+      sessionStorage.removeItem("teacherUsername");
+      updateAdminUI();
+      fetchActivities();
+      showMessage("Logged out successfully.", "success");
+      return;
+    }
+    loginModal.classList.remove("hidden");
+  });
+
+  closeLogin.addEventListener("click", () => loginModal.classList.add("hidden"));
+
+  loginModal.addEventListener("click", (event) => {
+    if (event.target === loginModal) loginModal.classList.add("hidden");
+  });
+
+  loginForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const username = document.getElementById("username").value;
+    const password = document.getElementById("password").value;
+
+    try {
+      const response = await fetch("/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      const result = await response.json();
+      if (!response.ok) {
+        showMessage(result.detail || "Login failed.", "error");
+        return;
+      }
+
+      adminToken = result.token;
+      adminUsername = result.username;
+      sessionStorage.setItem("teacherToken", adminToken);
+      sessionStorage.setItem("teacherUsername", adminUsername);
+      loginModal.classList.add("hidden");
+      loginForm.reset();
+      updateAdminUI();
+      fetchActivities();
+      showMessage("Teacher login successful.", "success");
+    } catch (error) {
+      showMessage("Login failed. Please try again.", "error");
+      console.error("Error logging in:", error);
+    }
+  });
+
   // Initialize app
+  updateAdminUI();
   fetchActivities();
 });
